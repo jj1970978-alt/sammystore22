@@ -80,9 +80,13 @@ export const blogs: Blog[] = [
 
 export const contactInfo = {
   email: "1sammystore1@gmail.com",
-  phone: "+234 906 620 1432",
-  phoneRaw: "+2349066201432",
+  phone: "+234 816 313 7129",
+  phoneRaw: "+2348163137129",
   whatsappSupport: "https://wa.me/2348163137129",
   whatsappGroup: "https://chat.whatsapp.com/Jjf0FDLFmxMEDEV9Hjo1Yt",
+  telegramSupport: "https://t.me/Sammy_store_logs",
+  telegramChannel: "https://t.me/sammystorelogss",
   location: "Nigeria",
 };
+
+export const ADMIN_OWNER_EMAIL = "1sammystore1@gmail.com";
