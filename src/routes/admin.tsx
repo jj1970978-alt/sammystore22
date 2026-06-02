@@ -1,0 +1,697 @@
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import {
+  Loader2, Users, Package, ShoppingCart, CreditCard, BarChart3, Settings,
+  Plus, Pencil, Trash2, CheckCircle, XCircle, Eye, EyeOff, Wallet,
+} from "lucide-react";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
+import { adminCreditWalletFn } from "@/lib/api/payment";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+export const Route = createFileRoute("/admin")({
+  head: () => ({ meta: [{ title: "Admin — Sammy Store Logs" }] }),
+  component: AdminPage,
+});
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+type Profile = { id: string; email: string | null; display_name: string | null; created_at: string };
+type UserWallet = { balance: number; currency: string };
+type UserRow = Profile & { wallet: UserWallet | null; role: string };
+type Category = { id: string; name: string; slug: string };
+type Product = { id: string; title: string; slug: string; price: number; stock: number; published: boolean; description: string | null; image_url: string | null; category_id: string | null; currency: string; created_at: string };
+type Order = { id: string; user_id: string; total: number; status: string; currency: string; created_at: string; user_email?: string };
+type Tx = { id: string; user_id: string; type: string; amount: number; provider: string | null; description: string | null; status: string; created_at: string; user_email?: string };
+type Stats = { users: number; revenue: number; orders: number; products: number };
+
+// ─── Guard ────────────────────────────────────────────────────────────────────
+function AdminPage() {
+  const { user, loading, isAdmin, role } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!loading) {
+      if (!user) navigate({ to: "/auth", search: { redirect: "/admin" } });
+      else if (role !== null && !isAdmin) navigate({ to: "/dashboard" });
+    }
+  }, [user, loading, isAdmin, role, navigate]);
+
+  if (loading || !user || role === null) return <div className="min-h-[60vh] flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-brand-orange" /></div>;
+  if (!isAdmin) return null;
+
+  return <AdminDashboard adminUser={user} />;
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+function AdminDashboard({ adminUser }: { adminUser: import("@supabase/supabase-js").User }) {
+  const [stats, setStats] = useState<Stats>({ users: 0, revenue: 0, orders: 0, products: 0 });
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  const fetchStats = async () => {
+    setStatsLoading(true);
+    const [u, rev, o, p] = await Promise.all([
+      supabase.from("profiles").select("id", { count: "exact", head: true }),
+      supabase.from("wallet_transactions").select("amount").eq("type", "credit").eq("status", "success"),
+      supabase.from("orders").select("id", { count: "exact", head: true }),
+      supabase.from("products").select("id", { count: "exact", head: true }).eq("published", true),
+    ]);
+    setStats({
+      users: u.count ?? 0,
+      revenue: (rev.data ?? []).reduce((s: number, t: { amount: number }) => s + Number(t.amount), 0),
+      orders: o.count ?? 0,
+      products: p.count ?? 0,
+    });
+    setStatsLoading(false);
+  };
+
+  useEffect(() => { fetchStats(); }, []);
+
+  return (
+    <div className="min-h-[calc(100vh-200px)] bg-background py-8 px-4">
+      <div className="max-w-7xl mx-auto">
+        <div className="mb-8 flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-brand-navy">Admin Dashboard</h1>
+            <p className="text-muted-foreground text-sm mt-1">{adminUser.email}</p>
+          </div>
+          <Button asChild variant="outline" size="sm"><Link to="/dashboard">← User Dashboard</Link></Button>
+        </div>
+
+        {/* Stats */}
+        {!statsLoading && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            {[
+              { label: "Total Users", value: stats.users.toLocaleString(), icon: Users, color: "text-blue-500", bg: "bg-blue-50" },
+              { label: "Total Revenue", value: `₦${stats.revenue.toLocaleString()}`, icon: Wallet, color: "text-green-500", bg: "bg-green-50" },
+              { label: "Total Orders", value: stats.orders.toLocaleString(), icon: ShoppingCart, color: "text-purple-500", bg: "bg-purple-50" },
+              { label: "Live Products", value: stats.products.toLocaleString(), icon: Package, color: "text-brand-orange", bg: "bg-brand-orange/10" },
+            ].map(({ label, value, icon: Icon, color, bg }) => (
+              <Card key={label}>
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center shrink-0`}><Icon className={`w-5 h-5 ${color}`} /></div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">{label}</div>
+                    <div className="text-lg font-bold text-brand-navy">{value}</div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        <Tabs defaultValue="users" className="w-full">
+          <TabsList className="mb-6 flex-wrap h-auto gap-1">
+            <TabsTrigger value="users"><Users className="w-3.5 h-3.5 mr-1" />Users</TabsTrigger>
+            <TabsTrigger value="products"><Package className="w-3.5 h-3.5 mr-1" />Products</TabsTrigger>
+            <TabsTrigger value="orders"><ShoppingCart className="w-3.5 h-3.5 mr-1" />Orders</TabsTrigger>
+            <TabsTrigger value="payments"><CreditCard className="w-3.5 h-3.5 mr-1" />Payments</TabsTrigger>
+            <TabsTrigger value="analytics"><BarChart3 className="w-3.5 h-3.5 mr-1" />Analytics</TabsTrigger>
+            <TabsTrigger value="settings"><Settings className="w-3.5 h-3.5 mr-1" />Settings</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="users"><UsersTab adminUser={adminUser} /></TabsContent>
+          <TabsContent value="products"><ProductsTab /></TabsContent>
+          <TabsContent value="orders"><OrdersTab /></TabsContent>
+          <TabsContent value="payments"><PaymentsTab /></TabsContent>
+          <TabsContent value="analytics"><AnalyticsTab stats={stats} /></TabsContent>
+          <TabsContent value="settings"><SettingsTab /></TabsContent>
+        </Tabs>
+      </div>
+    </div>
+  );
+}
+
+// ─── Users Tab ────────────────────────────────────────────────────────────────
+function UsersTab({ adminUser }: { adminUser: import("@supabase/supabase-js").User }) {
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [creditTarget, setCreditTarget] = useState<UserRow | null>(null);
+  const [creditAmount, setCreditAmount] = useState("");
+  const [creditDesc, setCreditDesc] = useState("");
+  const [crediting, setCrediting] = useState(false);
+
+  const fetchUsers = async () => {
+    setLoading(true);
+    const { data: profiles } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
+    if (!profiles) { setLoading(false); return; }
+
+    const ids = profiles.map((p: Profile) => p.id);
+    const [wallets, roles] = await Promise.all([
+      supabase.from("wallets").select("user_id, balance, currency").in("user_id", ids),
+      supabase.from("user_roles").select("user_id, role").in("user_id", ids),
+    ]);
+
+    const walletMap = Object.fromEntries((wallets.data ?? []).map((w: { user_id: string } & UserWallet) => [w.user_id, w]));
+    const roleMap = Object.fromEntries((roles.data ?? []).map((r: { user_id: string; role: string }) => [r.user_id, r.role]));
+
+    setUsers(profiles.map((p: Profile) => ({
+      ...p,
+      wallet: walletMap[p.id] ?? null,
+      role: roleMap[p.id] ?? "user",
+    })));
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchUsers(); }, []);
+
+  const handleCredit = async () => {
+    if (!creditTarget) return;
+    const amount = parseFloat(creditAmount);
+    if (!amount || amount <= 0) return toast.error("Enter a valid amount");
+    if (!creditDesc.trim()) return toast.error("Description is required");
+
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token;
+    if (!token) return toast.error("Session expired — please re-login");
+
+    setCrediting(true);
+    try {
+      await adminCreditWalletFn({ data: { targetUserId: creditTarget.id, amount, description: creditDesc.trim(), adminToken: token } });
+      toast.success(`₦${amount.toLocaleString()} credited to ${creditTarget.display_name ?? creditTarget.email}`);
+      setCreditTarget(null);
+      setCreditAmount("");
+      setCreditDesc("");
+      fetchUsers();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Credit failed");
+    }
+    setCrediting(false);
+  };
+
+  const filtered = users.filter((u) =>
+    (u.email ?? "").toLowerCase().includes(search.toLowerCase()) ||
+    (u.display_name ?? "").toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <h2 className="font-semibold text-brand-navy">All Users ({users.length})</h2>
+        <Input placeholder="Search by email or name…" value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
+      </div>
+
+      {loading ? <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-brand-orange" /></div> : (
+        <div className="overflow-x-auto rounded-xl border border-border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>
+                {["User", "Role", "Balance", "Joined", "Actions"].map((h) => (
+                  <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filtered.map((u) => (
+                <tr key={u.id} className="hover:bg-muted/20 transition-colors">
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-brand-navy">{u.display_name ?? "—"}</div>
+                    <div className="text-xs text-muted-foreground">{u.email}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge className={u.role === "admin" ? "bg-brand-orange text-white" : "bg-muted text-muted-foreground"}>{u.role}</Badge>
+                  </td>
+                  <td className="px-4 py-3 font-medium text-brand-navy">₦{(u.wallet?.balance ?? 0).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-muted-foreground text-xs">{new Date(u.created_at).toLocaleDateString("en-NG")}</td>
+                  <td className="px-4 py-3">
+                    <Button size="sm" variant="outline" className="text-xs border-brand-orange text-brand-orange hover:bg-brand-orange hover:text-white" onClick={() => { setCreditTarget(u); setCreditAmount(""); setCreditDesc(""); }}>
+                      <Wallet className="w-3 h-3 mr-1" />Credit
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {filtered.length === 0 && <div className="text-center py-8 text-muted-foreground text-sm">No users found</div>}
+        </div>
+      )}
+
+      {/* Credit Dialog */}
+      <Dialog open={!!creditTarget} onOpenChange={(o) => !o && setCreditTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Credit Wallet — {creditTarget?.display_name ?? creditTarget?.email}</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Amount (₦)</Label>
+              <Input type="number" min="1" value={creditAmount} onChange={(e) => setCreditAmount(e.target.value)} className="mt-1" placeholder="e.g. 5000" />
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Input value={creditDesc} onChange={(e) => setCreditDesc(e.target.value)} className="mt-1" placeholder="e.g. Bonus credit" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreditTarget(null)}>Cancel</Button>
+            <Button disabled={crediting} onClick={handleCredit} className="bg-brand-orange hover:bg-brand-orange-hover text-white">
+              {crediting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}Credit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ─── Products Tab ─────────────────────────────────────────────────────────────
+const emptyProduct = { id: "", title: "", slug: "", price: 0, stock: 0, published: false, description: "", image_url: "", category_id: "", currency: "NGN", created_at: "" };
+
+function ProductsTab() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<Product | null>(null);
+  const [form, setForm] = useState<Omit<Product, "id" | "created_at">>(emptyProduct);
+  const [saving, setSaving] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const fetchData = async () => {
+    setLoading(true);
+    const [p, c] = await Promise.all([
+      supabase.from("products").select("*").order("created_at", { ascending: false }),
+      supabase.from("product_categories").select("*").order("name"),
+    ]);
+    setProducts((p.data as Product[]) ?? []);
+    setCategories((c.data as Category[]) ?? []);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const openCreate = () => {
+    setEditing(null);
+    setForm({ ...emptyProduct });
+    setDialogOpen(true);
+  };
+
+  const openEdit = (p: Product) => {
+    setEditing(p);
+    setForm({ title: p.title, slug: p.slug, price: p.price, stock: p.stock, published: p.published, description: p.description ?? "", image_url: p.image_url ?? "", category_id: p.category_id ?? "", currency: p.currency });
+    setDialogOpen(true);
+  };
+
+  const slugify = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+  const handleSave = async () => {
+    if (!form.title.trim()) return toast.error("Title is required");
+    if (!form.price || form.price < 0) return toast.error("Price must be ≥ 0");
+    setSaving(true);
+
+    const payload = {
+      ...form,
+      slug: form.slug || slugify(form.title),
+      price: Number(form.price),
+      stock: Number(form.stock),
+      category_id: form.category_id || null,
+      description: form.description || null,
+      image_url: form.image_url || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    let error;
+    if (editing) {
+      ({ error } = await supabase.from("products").update(payload).eq("id", editing.id));
+    } else {
+      ({ error } = await supabase.from("products").insert({ ...payload, created_at: new Date().toISOString() }));
+    }
+
+    setSaving(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(editing ? "Product updated!" : "Product created!");
+    setDialogOpen(false);
+    fetchData();
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    setDeleting(true);
+    const { error } = await supabase.from("products").delete().eq("id", deleteId);
+    setDeleting(false);
+    setDeleteId(null);
+    error ? toast.error(error.message) : toast.success("Product deleted");
+    fetchData();
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <h2 className="font-semibold text-brand-navy">Products ({products.length})</h2>
+        <Button onClick={openCreate} className="bg-brand-orange hover:bg-brand-orange-hover text-white text-sm">
+          <Plus className="w-4 h-4 mr-1" />Add Product
+        </Button>
+      </div>
+
+      {loading ? <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-brand-orange" /></div> : (
+        <div className="overflow-x-auto rounded-xl border border-border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>{["Title", "Category", "Price", "Stock", "Status", "Actions"].map((h) => <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">{h}</th>)}</tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {products.map((p) => {
+                const cat = categories.find((c) => c.id === p.category_id);
+                return (
+                  <tr key={p.id} className="hover:bg-muted/20 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-brand-navy">{p.title}</div>
+                      <div className="text-xs text-muted-foreground font-mono">{p.slug}</div>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs">{cat?.name ?? "—"}</td>
+                    <td className="px-4 py-3 font-medium text-brand-navy">₦{Number(p.price).toLocaleString()}</td>
+                    <td className="px-4 py-3">
+                      <span className={`text-sm font-medium ${p.stock === 0 ? "text-red-500" : "text-brand-navy"}`}>{p.stock}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge className={p.published ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}>
+                        {p.published ? "Live" : "Draft"}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => openEdit(p)}><Pencil className="w-3.5 h-3.5" /></Button>
+                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-muted-foreground hover:text-green-600"
+                          onClick={async () => { await supabase.from("products").update({ published: !p.published, updated_at: new Date().toISOString() }).eq("id", p.id); fetchData(); }}>
+                          {p.published ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-muted-foreground hover:text-red-500" onClick={() => setDeleteId(p.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {products.length === 0 && <div className="text-center py-8 text-muted-foreground text-sm">No products yet — add one!</div>}
+        </div>
+      )}
+
+      {/* Create / Edit Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>{editing ? "Edit Product" : "Add New Product"}</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <Label>Title *</Label>
+                <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value, slug: slugify(e.target.value) })} className="mt-1" placeholder="Aged Twitter Account" />
+              </div>
+              <div className="col-span-2">
+                <Label>Slug</Label>
+                <Input value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} className="mt-1" placeholder="auto-generated" />
+              </div>
+              <div>
+                <Label>Price (₦) *</Label>
+                <Input type="number" min="0" value={form.price} onChange={(e) => setForm({ ...form, price: parseFloat(e.target.value) })} className="mt-1" />
+              </div>
+              <div>
+                <Label>Stock</Label>
+                <Input type="number" min="0" value={form.stock} onChange={(e) => setForm({ ...form, stock: parseInt(e.target.value) })} className="mt-1" />
+              </div>
+              <div className="col-span-2">
+                <Label>Category</Label>
+                <Select value={form.category_id} onValueChange={(v) => setForm({ ...form, category_id: v })}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Select category" /></SelectTrigger>
+                  <SelectContent>
+                    {categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-2">
+                <Label>Description</Label>
+                <textarea value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} className="mt-1 w-full rounded-md border border-input px-3 py-2 text-sm resize-none h-20 focus:outline-none focus:ring-2 focus:ring-brand-orange/30" placeholder="Optional description…" />
+              </div>
+              <div className="col-span-2">
+                <Label>Image URL</Label>
+                <Input value={form.image_url ?? ""} onChange={(e) => setForm({ ...form, image_url: e.target.value })} className="mt-1" placeholder="https://…" />
+              </div>
+              <div className="col-span-2 flex items-center gap-3">
+                <input type="checkbox" id="published" checked={form.published} onChange={(e) => setForm({ ...form, published: e.target.checked })} className="w-4 h-4 accent-orange-500" />
+                <Label htmlFor="published">Publish (visible to users)</Label>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button disabled={saving} onClick={handleSave} className="bg-brand-orange hover:bg-brand-orange-hover text-white">
+              {saving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}{editing ? "Save Changes" : "Create Product"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation */}
+      <Dialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Delete Product?</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">This action is permanent and cannot be undone.</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>
+            <Button disabled={deleting} onClick={handleDelete} className="bg-red-500 hover:bg-red-600 text-white">
+              {deleting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ─── Orders Tab ───────────────────────────────────────────────────────────────
+const ORDER_STATUS = ["pending", "completed", "failed", "refunded"];
+const STATUS_COLORS: Record<string, string> = {
+  completed: "bg-green-100 text-green-700", pending: "bg-yellow-100 text-yellow-700",
+  failed: "bg-red-100 text-red-700", refunded: "bg-blue-100 text-blue-700",
+};
+
+function OrdersTab() {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [profiles, setProfiles] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+
+  const fetchOrders = async () => {
+    setLoading(true);
+    const { data: o } = await supabase.from("orders").select("*").order("created_at", { ascending: false }).limit(100);
+    setOrders((o as Order[]) ?? []);
+
+    if (o?.length) {
+      const ids = [...new Set(o.map((x: Order) => x.user_id))];
+      const { data: p } = await supabase.from("profiles").select("id, email, display_name").in("id", ids);
+      const map: Record<string, string> = {};
+      (p ?? []).forEach((x: { id: string; email: string | null; display_name: string | null }) => { map[x.id] = x.email ?? x.display_name ?? x.id; });
+      setProfiles(map);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchOrders(); }, []);
+
+  const updateStatus = async (id: string, status: string) => {
+    const { error } = await supabase.from("orders").update({ status }).eq("id", id);
+    if (error) toast.error(error.message);
+    else { toast.success("Order updated"); fetchOrders(); }
+  };
+
+  return (
+    <div>
+      <h2 className="font-semibold text-brand-navy mb-4">All Orders ({orders.length})</h2>
+      {loading ? <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-brand-orange" /></div> : (
+        <div className="overflow-x-auto rounded-xl border border-border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>{["Order ID", "User", "Total", "Status", "Date", "Update"].map((h) => <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">{h}</th>)}</tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {orders.map((o) => (
+                <tr key={o.id} className="hover:bg-muted/20 transition-colors">
+                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">#{o.id.slice(-8).toUpperCase()}</td>
+                  <td className="px-4 py-3 text-sm">{profiles[o.user_id] ?? o.user_id.slice(-8)}</td>
+                  <td className="px-4 py-3 font-medium text-brand-navy">₦{Number(o.total).toLocaleString()}</td>
+                  <td className="px-4 py-3"><Badge className={`text-xs ${STATUS_COLORS[o.status] ?? "bg-gray-100 text-gray-500"}`}>{o.status}</Badge></td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">{new Date(o.created_at).toLocaleDateString("en-NG")}</td>
+                  <td className="px-4 py-3">
+                    <Select defaultValue={o.status} onValueChange={(v) => updateStatus(o.id, v)}>
+                      <SelectTrigger className="h-7 text-xs w-32"><SelectValue /></SelectTrigger>
+                      <SelectContent>{ORDER_STATUS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {orders.length === 0 && <div className="text-center py-8 text-muted-foreground text-sm">No orders yet</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Payments Tab ─────────────────────────────────────────────────────────────
+function PaymentsTab() {
+  const [txs, setTxs] = useState<Tx[]>([]);
+  const [profiles, setProfiles] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    supabase.from("wallet_transactions").select("*").order("created_at", { ascending: false }).limit(100).then(async ({ data }) => {
+      setTxs((data as Tx[]) ?? []);
+      if (data?.length) {
+        const ids = [...new Set(data.map((x: Tx) => x.user_id))];
+        const { data: p } = await supabase.from("profiles").select("id, email, display_name").in("id", ids);
+        const map: Record<string, string> = {};
+        (p ?? []).forEach((x: { id: string; email: string | null; display_name: string | null }) => { map[x.id] = x.email ?? x.display_name ?? x.id.slice(-8); });
+        setProfiles(map);
+      }
+      setLoading(false);
+    });
+  }, []);
+
+  return (
+    <div>
+      <h2 className="font-semibold text-brand-navy mb-4">Wallet Transactions ({txs.length})</h2>
+      {loading ? <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-brand-orange" /></div> : (
+        <div className="overflow-x-auto rounded-xl border border-border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>{["User", "Type", "Amount", "Provider", "Status", "Date"].map((h) => <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">{h}</th>)}</tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {txs.map((t) => (
+                <tr key={t.id} className="hover:bg-muted/20 transition-colors">
+                  <td className="px-4 py-3 text-sm">{profiles[t.user_id] ?? t.user_id.slice(-8)}</td>
+                  <td className="px-4 py-3">
+                    <Badge className={t.type === "credit" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-500"}>{t.type}</Badge>
+                  </td>
+                  <td className="px-4 py-3 font-medium text-brand-navy">₦{Number(t.amount).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-xs capitalize text-muted-foreground">{t.provider ?? "—"}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1">
+                      {t.status === "success" ? <CheckCircle className="w-3.5 h-3.5 text-green-500" /> : <XCircle className="w-3.5 h-3.5 text-red-400" />}
+                      <span className="text-xs capitalize">{t.status}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">{new Date(t.created_at).toLocaleDateString("en-NG")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {txs.length === 0 && <div className="text-center py-8 text-muted-foreground text-sm">No transactions yet</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Analytics Tab ────────────────────────────────────────────────────────────
+function AnalyticsTab({ stats }: { stats: Stats }) {
+  return (
+    <div className="max-w-2xl">
+      <h2 className="font-semibold text-brand-navy mb-6">Platform Analytics</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {[
+          { label: "Registered Users", value: stats.users, desc: "Total accounts created", color: "text-blue-500", bg: "bg-blue-50" },
+          { label: "Total Revenue (₦)", value: `₦${stats.revenue.toLocaleString()}`, desc: "Sum of all credited wallets", color: "text-green-500", bg: "bg-green-50" },
+          { label: "Orders Placed", value: stats.orders, desc: "All time purchase orders", color: "text-purple-500", bg: "bg-purple-50" },
+          { label: "Live Products", value: stats.products, desc: "Published & available", color: "text-brand-orange", bg: "bg-brand-orange/10" },
+        ].map(({ label, value, desc, color, bg }) => (
+          <Card key={label}>
+            <CardContent className="p-5">
+              <div className={`text-3xl font-bold ${color} mb-1`}>{value}</div>
+              <div className="font-medium text-brand-navy text-sm">{label}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{desc}</div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Settings Tab ─────────────────────────────────────────────────────────────
+function SettingsTab() {
+  const [settings, setSettings] = useState<{ key: string; value: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newKey, setNewKey] = useState("");
+  const [newVal, setNewVal] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const fetchSettings = async () => {
+    setLoading(true);
+    const { data } = await supabase.from("site_settings").select("*").order("key");
+    setSettings((data ?? []).map((s: { key: string; value: unknown }) => ({ key: s.key, value: JSON.stringify(s.value) })));
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchSettings(); }, []);
+
+  const saveSetting = async () => {
+    if (!newKey.trim() || !newVal.trim()) return toast.error("Key and value are required");
+    setSaving(true);
+    let parsed: unknown;
+    try { parsed = JSON.parse(newVal); } catch { parsed = newVal; }
+    const { error } = await supabase.from("site_settings").upsert({ key: newKey.trim(), value: parsed, updated_at: new Date().toISOString() });
+    setSaving(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Setting saved!");
+    setNewKey(""); setNewVal("");
+    fetchSettings();
+  };
+
+  const deleteSetting = async (key: string) => {
+    const { error } = await supabase.from("site_settings").delete().eq("key", key);
+    if (error) toast.error(error.message);
+    else { toast.success("Setting deleted"); fetchSettings(); }
+  };
+
+  return (
+    <div className="max-w-2xl">
+      <h2 className="font-semibold text-brand-navy mb-4">Site Settings</h2>
+
+      <Card className="mb-6">
+        <CardHeader><CardTitle className="text-base text-brand-navy">Add / Update Setting</CardTitle></CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <Label>Key</Label>
+              <Input value={newKey} onChange={(e) => setNewKey(e.target.value)} className="mt-1" placeholder="e.g. maintenance_mode" />
+            </div>
+            <div>
+              <Label>Value (JSON or text)</Label>
+              <Input value={newVal} onChange={(e) => setNewVal(e.target.value)} className="mt-1" placeholder='e.g. true or "welcome"' />
+            </div>
+          </div>
+          <Button onClick={saveSetting} disabled={saving} className="bg-brand-orange hover:bg-brand-orange-hover text-white text-sm">
+            {saving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}Save Setting
+          </Button>
+        </CardContent>
+      </Card>
+
+      {loading ? <Loader2 className="w-5 h-5 animate-spin text-brand-orange" /> : (
+        <div className="space-y-2">
+          {settings.length === 0 ? <p className="text-sm text-muted-foreground">No settings configured yet.</p> : settings.map((s) => (
+            <Card key={s.key}>
+              <CardContent className="p-3 flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-mono text-sm font-medium text-brand-navy">{s.key}</div>
+                  <div className="text-xs text-muted-foreground font-mono truncate max-w-xs">{s.value}</div>
+                </div>
+                <Button size="sm" variant="ghost" className="text-red-400 hover:text-red-600 shrink-0" onClick={() => deleteSetting(s.key)}>
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

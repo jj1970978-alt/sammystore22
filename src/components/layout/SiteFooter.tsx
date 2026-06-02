@@ -1,9 +1,10 @@
 import { Link } from "@tanstack/react-router";
-import { Facebook, Twitter, Linkedin, Instagram, MapPin, Mail, Phone } from "lucide-react";
+import { Facebook, Twitter, Linkedin, Instagram, MapPin, Mail, Phone, MessageCircle, Send, Users } from "lucide-react";
 import { contactInfo } from "@/data/site";
 
 export function SiteFooter() {
   const year = new Date().getFullYear();
+
   const socials = [
     { icon: Facebook, href: "https://facebook.com", label: "Facebook" },
     { icon: Twitter, href: "https://twitter.com", label: "Twitter" },
@@ -11,48 +12,62 @@ export function SiteFooter() {
     { icon: Instagram, href: "https://instagram.com", label: "Instagram" },
   ];
 
+  const community = [
+    { icon: MessageCircle, href: contactInfo.whatsappSupport, label: "WhatsApp Support", color: "text-green-400" },
+    { icon: Users, href: contactInfo.whatsappGroup, label: "WhatsApp Community", color: "text-green-400" },
+    { icon: Send, href: contactInfo.telegramSupport, label: "Telegram Support", color: "text-sky-400" },
+    { icon: Send, href: contactInfo.telegramChannel, label: "Telegram Channel", color: "text-sky-400" },
+  ];
+
   return (
     <footer className="w-full bg-brand-navy text-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10 lg:gap-12">
+
+          {/* Brand */}
           <div className="space-y-5">
             <Link to="/" className="inline-block">
-              <span className="text-xl font-bold">
-                SAMMY <span className="text-brand-orange">STORE</span>
-              </span>
+              <span className="text-xl font-bold">SAMMY <span className="text-brand-orange">STORE</span></span>
             </Link>
             <p className="text-white/70 text-sm leading-relaxed">
-              A seamless and secure platform for buying and selling verified social
-              media accounts.
+              A seamless and secure platform for buying and selling verified social media accounts.
             </p>
             <div className="flex items-center gap-3">
               {socials.map(({ icon: Icon, href, label }) => (
-                <a
-                  key={label}
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={label}
-                  className="w-10 h-10 rounded-full bg-brand-navy-light flex items-center justify-center hover:bg-brand-orange transition-colors"
-                >
+                <a key={label} href={href} target="_blank" rel="noopener noreferrer" aria-label={label}
+                  className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-brand-orange transition-colors">
                   <Icon className="w-4 h-4" />
                 </a>
               ))}
             </div>
           </div>
 
+          {/* Links */}
           <FooterCol title="Useful Links">
             <FooterLink to="/products">Products</FooterLink>
             <FooterLink to="/about">About Us</FooterLink>
-            <FooterLink to="/contact">Register</FooterLink>
-          </FooterCol>
-
-          <FooterCol title="Resources">
             <FooterLink to="/blog">Blog</FooterLink>
-            <FooterLink to="/contact">Contact Us</FooterLink>
-            <FooterLink to="/about">Cookie Policy</FooterLink>
+            <FooterLink to="/contact">Contact</FooterLink>
+            <FooterLink to="/dashboard">Dashboard</FooterLink>
           </FooterCol>
 
+          {/* Community */}
+          <div>
+            <FooterHeading>Community</FooterHeading>
+            <ul className="space-y-3 mt-6">
+              {community.map(({ icon: Icon, href, label, color }) => (
+                <li key={label}>
+                  <a href={href} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2.5 text-white/70 hover:text-white transition-colors text-sm group">
+                    <Icon className={`w-4 h-4 ${color} shrink-0`} />
+                    {label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Contact */}
           <div>
             <FooterHeading>Contact Us</FooterHeading>
             <ul className="space-y-4 mt-6">
@@ -62,40 +77,24 @@ export function SiteFooter() {
               </li>
               <li className="flex items-center gap-3">
                 <Mail className="w-5 h-5 text-brand-orange flex-shrink-0" />
-                <a
-                  href={`mailto:${contactInfo.email}`}
-                  className="text-white/70 hover:text-white transition-colors text-sm break-all"
-                >
-                  {contactInfo.email}
-                </a>
+                <a href={`mailto:${contactInfo.email}`} className="text-white/70 hover:text-white transition-colors text-sm break-all">{contactInfo.email}</a>
               </li>
               <li className="flex items-center gap-3">
                 <Phone className="w-5 h-5 text-brand-orange flex-shrink-0" />
-                <a
-                  href={`tel:${contactInfo.phoneRaw}`}
-                  className="text-white/70 hover:text-white transition-colors text-sm"
-                >
-                  {contactInfo.phone}
-                </a>
+                <a href={`tel:${contactInfo.phoneRaw}`} className="text-white/70 hover:text-white transition-colors text-sm">{contactInfo.phone}</a>
               </li>
             </ul>
           </div>
         </div>
       </div>
 
-      <div className="border-t border-brand-navy-light">
+      <div className="border-t border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
           <div className="flex flex-col md:flex-row items-center justify-between gap-3">
-            <p className="text-white/60 text-sm">
-              &copy; {year} Sammy Store Logs. All rights reserved.
-            </p>
+            <p className="text-white/60 text-sm">&copy; {year} Sammy Store Logs. All rights reserved.</p>
             <div className="flex items-center gap-5 text-sm text-white/60">
-              <Link to="/about" className="hover:text-white transition-colors">
-                Privacy Policy
-              </Link>
-              <Link to="/about" className="hover:text-white transition-colors">
-                Terms of Service
-              </Link>
+              <Link to="/about" className="hover:text-white transition-colors">Privacy Policy</Link>
+              <Link to="/about" className="hover:text-white transition-colors">Terms of Service</Link>
             </div>
           </div>
         </div>
@@ -125,12 +124,7 @@ function FooterCol({ title, children }: { title: string; children: React.ReactNo
 function FooterLink({ to, children }: { to: string; children: React.ReactNode }) {
   return (
     <li>
-      <Link
-        to={to}
-        className="text-white/70 hover:text-white transition-colors text-sm"
-      >
-        {children}
-      </Link>
+      <Link to={to as "/"} className="text-white/70 hover:text-white transition-colors text-sm">{children}</Link>
     </li>
   );
 }

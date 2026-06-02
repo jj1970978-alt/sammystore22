@@ -134,7 +134,7 @@ export function SiteHeader() {
             <DropdownMenuContent align="start" className="w-64">
               {categories.map((category) => (
                 <DropdownMenuItem key={category.id} asChild>
-                  <Link to="/products" className="cursor-pointer">
+                  <Link to="/products" search={{ cat: category.slug }} className="cursor-pointer">
                     {category.name}
                   </Link>
                 </DropdownMenuItem>
