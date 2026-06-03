@@ -1,0 +1,1 @@
+- [Sammy Store Stack](sammy-store-stack.md) — TanStack Start SSR + Supabase + Tailwind; key patterns for server fns, auth, and payments
