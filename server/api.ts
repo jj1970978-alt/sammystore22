@@ -6,15 +6,24 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL ?? "";
+// ── Environment variables — all server-side, never shipped to browser ──────
+const SUPABASE_URL =
+  process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY ?? "";
 const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY ?? "";
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.error(
+    "[API] FATAL: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in Replit Secrets."
+  );
+}
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
+// ── Auth helper ───────────────────────────────────────────────────────────────
 async function getAuthUser(req: express.Request) {
   const auth = req.headers.authorization;
   if (!auth?.startsWith("Bearer ")) return null;
@@ -27,6 +36,16 @@ async function getAuthUser(req: express.Request) {
 function err(res: express.Response, status: number, msg: string) {
   return res.status(status).json({ error: msg });
 }
+
+// ── Health check ──────────────────────────────────────────────────────────────
+app.get("/api/health", (_req, res) => {
+  res.json({
+    ok: true,
+    supabase: !!SUPABASE_URL && !!SUPABASE_SERVICE_KEY,
+    paystack: !!PAYSTACK_SECRET_KEY,
+    nowpayments: !!NOWPAYMENTS_API_KEY,
+  });
+});
 
 // ── Paystack: verify + credit wallet ─────────────────────────────────────────
 app.post("/api/payment/verify-paystack", async (req, res) => {
@@ -247,10 +266,16 @@ app.post("/api/delivery/assign-credential", async (req, res) => {
     .eq("id", credId as string)
     .single();
 
-  return res.json({ assigned: true, content: (cred as Record<string, unknown> | null)?.content ?? null, label: (cred as Record<string, unknown> | null)?.label ?? null });
+  return res.json({
+    assigned: true,
+    content: (cred as Record<string, unknown> | null)?.content ?? null,
+    label: (cred as Record<string, unknown> | null)?.label ?? null,
+  });
 });
 
 const PORT = parseInt(process.env.API_PORT ?? "3001", 10);
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`API server running on port ${PORT}`);
+  console.log(`[API] Server running on port ${PORT}`);
+  if (!PAYSTACK_SECRET_KEY) console.warn("[API] ⚠️  PAYSTACK_SECRET_KEY not set — Paystack payments will fail");
+  if (!NOWPAYMENTS_API_KEY) console.warn("[API] ⚠️  NOWPAYMENTS_API_KEY not set — crypto payments will fail");
 });
