@@ -16,23 +16,41 @@ type Tx = { id: string; type: "credit" | "debit"; amount: number; balance_after:
 
 declare global { interface Window { PaystackPop: { setup(o: Record<string, unknown>): { openIframe(): void } } } }
 
-async function ensureWallet(userId: string, token: string | null): Promise<WalletRow | null> {
-  // Try the server-side endpoint first (bypasses RLS for wallet creation)
+async function getFreshToken(): Promise<string | null> {
+  if (!isSupabaseConfigured()) return null;
   try {
-    const res = await fetch("/api/wallet/ensure", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ userId }),
-    });
-    if (res.ok) {
-      const data = await res.json() as { wallet: WalletRow };
-      return data.wallet;
-    }
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
   } catch {
-    // fall through to client-side
+    return null;
+  }
+}
+
+async function ensureWallet(userId: string): Promise<WalletRow | null> {
+  // Always get a fresh token — avoids race where React session state hasn't updated yet
+  const token = await getFreshToken();
+
+  // Try the server-side endpoint first (bypasses RLS for wallet creation)
+  if (token) {
+    try {
+      const res = await fetch("/api/wallet/ensure", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ userId }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { wallet: WalletRow };
+        return data.wallet;
+      }
+      // Log the error for debugging
+      const errBody = await res.json().catch(() => ({})) as { error?: string };
+      console.warn("[Wallet] /api/wallet/ensure returned", res.status, errBody.error);
+    } catch (e) {
+      console.warn("[Wallet] /api/wallet/ensure fetch error:", e);
+    }
   }
 
   // Fallback: try directly via supabase client
@@ -77,9 +95,8 @@ export default function WalletPage() {
     setWalletError(null);
 
     try {
-      const token = session?.access_token ?? null;
       const [walletRow, txResult] = await Promise.all([
-        ensureWallet(user.id, token),
+        ensureWallet(user.id),
         (async () => {
           if (!isSupabaseConfigured()) return [];
           try {
@@ -185,7 +202,7 @@ export default function WalletPage() {
               </TabsList>
 
               <TabsContent value="fund">
-                <FundWallet user={user} wallet={wallet} session={session} onFunded={fetchData} />
+                <FundWallet user={user} wallet={wallet} onFunded={fetchData} />
               </TabsContent>
 
               <TabsContent value="history">
@@ -201,7 +218,7 @@ export default function WalletPage() {
 
 const PRESETS = [1000, 2000, 5000, 10000, 20000, 50000];
 
-function FundWallet({ user, wallet, session, onFunded }: { user: import("@supabase/supabase-js").User; wallet: WalletRow | null; session: import("@supabase/supabase-js").Session | null; onFunded: () => void }) {
+function FundWallet({ user, wallet, onFunded }: { user: import("@supabase/supabase-js").User; wallet: WalletRow | null; onFunded: () => void }) {
   const [amount, setAmount] = useState("");
   const [psLoading, setPsLoading] = useState(false);
   const [nowLoading, setNowLoading] = useState(false);
@@ -210,7 +227,6 @@ function FundWallet({ user, wallet, session, onFunded }: { user: import("@supaba
 
   const genRef = () => `ss-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
   const amt = parseFloat(amount || "0");
-  const token = session?.access_token ?? null;
 
   const handlePaystack = async () => {
     if (amt < 100) return toast.error("Minimum amount is ₦100");
@@ -226,7 +242,7 @@ function FundWallet({ user, wallet, session, onFunded }: { user: import("@supaba
     try {
       // Ensure wallet exists before payment
       if (!wallet) {
-        const ensured = await ensureWallet(user.id, token);
+        const ensured = await ensureWallet(user.id);
         if (!ensured) {
           setPsLoading(false);
           return toast.error("Could not create wallet — please contact support");
@@ -280,7 +296,7 @@ function FundWallet({ user, wallet, session, onFunded }: { user: import("@supaba
     try {
       // Ensure wallet exists before payment
       if (!wallet) {
-        const ensured = await ensureWallet(user.id, token);
+        const ensured = await ensureWallet(user.id);
         if (!ensured) {
           setNowLoading(false);
           return toast.error("Could not create wallet — please contact support");
