@@ -36,6 +36,9 @@ export default function ProductsPage() {
   const [deliveredCred, setDeliveredCred] = useState<DeliveredCred | null>(null);
   const [purchaseOrderId, setPurchaseOrderId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [topUpOpen, setTopUpOpen] = useState(false);
+  const [topUpAmount, setTopUpAmount] = useState<number | undefined>(undefined);
+
 
   const activeCat = searchParams.get("cat") ?? undefined;
   const activeCategory = dbCategories.find((c) => c.slug === activeCat);
