@@ -1,8 +1,15 @@
-import { supabase } from "@/integrations/supabase/client";
+import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 
 export async function assignCredentialToOrder(data: { orderId: string; productId: string }) {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token;
+  let token: string | null = null;
+  if (isSupabaseConfigured()) {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      token = sessionData.session?.access_token ?? null;
+    } catch {
+      token = null;
+    }
+  }
 
   const res = await fetch("/api/delivery/assign-credential", {
     method: "POST",

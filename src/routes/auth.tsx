@@ -1,9 +1,9 @@
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { z } from "zod";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,23 @@ export default function AuthPage() {
     }
   }, [user, loading, navigate, redirect]);
 
+  if (!isSupabaseConfigured()) {
+    return (
+      <div className="min-h-[calc(100vh-200px)] flex items-center justify-center px-4 py-12 bg-background">
+        <div className="w-full max-w-md bg-card border border-border rounded-2xl shadow-sm p-6 sm:p-8 text-center">
+          <div className="w-14 h-14 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="w-7 h-7 text-yellow-600" />
+          </div>
+          <h2 className="text-xl font-bold text-brand-navy mb-2">Authentication Not Configured</h2>
+          <p className="text-sm text-muted-foreground">
+            To enable login, add <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">VITE_SUPABASE_URL</code> and{" "}
+            <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">VITE_SUPABASE_ANON_KEY</code> to your Replit Secrets.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-[calc(100vh-200px)] flex items-center justify-center px-4 py-12 bg-background">
       <div className="w-full max-w-md bg-card border border-border rounded-2xl shadow-sm p-6 sm:p-8">
@@ -33,7 +50,7 @@ export default function AuthPage() {
               SAMMY <span className="text-brand-orange">STORE</span>
             </span>
           </Link>
-          <p className="text-sm text-muted-foreground mt-2">Welcome — sign in to manage your wallet & orders.</p>
+          <p className="text-sm text-muted-foreground mt-2">Welcome — sign in to manage your wallet &amp; orders.</p>
         </div>
 
         <Tabs defaultValue={mode === "signup" ? "signup" : "login"} className="w-full">
@@ -78,19 +95,28 @@ function LoginForm() {
     const parsed = loginSchema.safeParse({ email, password });
     if (!parsed.success) { toast.error(parsed.error.issues[0].message); return; }
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword(parsed.data);
-    setLoading(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success("Welcome back!");
+    try {
+      const { error } = await supabase.auth.signInWithPassword(parsed.data);
+      if (error) { toast.error(error.message); return; }
+      toast.success("Welcome back!");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Sign in failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const onForgot = async () => {
     if (!email) return toast.error("Enter your email above first");
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
-    if (error) toast.error(error.message);
-    else toast.success("Password reset email sent");
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) toast.error(error.message);
+      else toast.success("Password reset email sent");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to send reset email");
+    }
   };
 
   return (
@@ -131,17 +157,22 @@ function SignupForm() {
     const parsed = signupSchema.safeParse({ displayName, email, password });
     if (!parsed.success) { toast.error(parsed.error.issues[0].message); return; }
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email: parsed.data.email,
-      password: parsed.data.password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/dashboard`,
-        data: { display_name: parsed.data.displayName },
-      },
-    });
-    setLoading(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success("Account created! Check your email to confirm.");
+    try {
+      const { error } = await supabase.auth.signUp({
+        email: parsed.data.email,
+        password: parsed.data.password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/dashboard`,
+          data: { display_name: parsed.data.displayName },
+        },
+      });
+      if (error) { toast.error(error.message); return; }
+      toast.success("Account created! Check your email to confirm.");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Sign up failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -170,12 +201,17 @@ function GoogleButton() {
   const [loading, setLoading] = useState(false);
   const onClick = async () => {
     setLoading(true);
-    const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin + "/dashboard",
-    });
-    if (result.error) {
+    try {
+      const result = await lovable.auth.signInWithOAuth("google", {
+        redirect_uri: window.location.origin + "/dashboard",
+      });
+      if (result.error) {
+        setLoading(false);
+        toast.error(result.error.message || "Google sign-in failed");
+      }
+    } catch (err: unknown) {
       setLoading(false);
-      toast.error(result.error.message || "Google sign-in failed");
+      toast.error(err instanceof Error ? err.message : "Google sign-in failed");
     }
   };
   return (

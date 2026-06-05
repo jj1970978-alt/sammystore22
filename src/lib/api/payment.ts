@@ -1,8 +1,13 @@
-import { supabase } from "@/integrations/supabase/client";
+import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 
-async function getToken() {
-  const { data } = await supabase.auth.getSession();
-  return data.session?.access_token ?? null;
+async function getToken(): Promise<string | null> {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
+  } catch {
+    return null;
+  }
 }
 
 async function callApi<T>(path: string, body: Record<string, unknown>): Promise<T> {

@@ -1,8 +1,8 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Wallet, ArrowDownCircle, ArrowUpCircle, Bitcoin, CreditCard, CheckCircle2, RefreshCw } from "lucide-react";
+import { Loader2, Wallet, ArrowDownCircle, ArrowUpCircle, Bitcoin, CreditCard, CheckCircle2, RefreshCw, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,41 +16,91 @@ type Tx = { id: string; type: "credit" | "debit"; amount: number; balance_after:
 
 declare global { interface Window { PaystackPop: { setup(o: Record<string, unknown>): { openIframe(): void } } } }
 
+async function ensureWallet(userId: string, token: string | null): Promise<WalletRow | null> {
+  // Try the server-side endpoint first (bypasses RLS for wallet creation)
+  try {
+    const res = await fetch("/api/wallet/ensure", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ userId }),
+    });
+    if (res.ok) {
+      const data = await res.json() as { wallet: WalletRow };
+      return data.wallet;
+    }
+  } catch {
+    // fall through to client-side
+  }
+
+  // Fallback: try directly via supabase client
+  try {
+    const { data: existing } = await supabase.from("wallets").select("*").eq("user_id", userId).maybeSingle();
+    if (existing) return existing as WalletRow;
+
+    const { data: created } = await supabase.from("wallets").insert({ user_id: userId, balance: 0, currency: "NGN" }).select("*").maybeSingle();
+    return (created as WalletRow | null) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export default function WalletPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, session } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [wallet, setWallet] = useState<WalletRow | null>(null);
   const [transactions, setTransactions] = useState<Tx[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
+  const [walletError, setWalletError] = useState<string | null>(null);
   const psLoaded = useRef(false);
 
   useEffect(() => { if (!loading && !user) navigate("/auth?redirect=/wallet"); }, [user, loading, navigate]);
 
   useEffect(() => {
     if (psLoaded.current) return;
-    const s = document.createElement("script");
-    s.src = "https://js.paystack.co/v1/inline.js";
-    s.async = true;
-    document.body.appendChild(s);
+    const existing = document.querySelector('script[src="https://js.paystack.co/v1/inline.js"]');
+    if (!existing) {
+      const s = document.createElement("script");
+      s.src = "https://js.paystack.co/v1/inline.js";
+      s.async = true;
+      document.body.appendChild(s);
+    }
     psLoaded.current = true;
   }, []);
 
   const fetchData = async () => {
     if (!user) return;
     setDataLoading(true);
-    const [w, t] = await Promise.all([
-      supabase.from("wallets").select("*").eq("user_id", user.id).maybeSingle(),
-      supabase.from("wallet_transactions").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(50),
-    ]);
-    let walletRow = w.data as WalletRow | null;
-    if (!walletRow) {
-      const { data: created } = await supabase.from("wallets").insert({ user_id: user.id }).select("*").maybeSingle();
-      walletRow = (created as WalletRow | null) ?? null;
+    setWalletError(null);
+
+    try {
+      const token = session?.access_token ?? null;
+      const [walletRow, txResult] = await Promise.all([
+        ensureWallet(user.id, token),
+        (async () => {
+          if (!isSupabaseConfigured()) return [];
+          try {
+            const { data } = await supabase.from("wallet_transactions").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(50);
+            return (data as Tx[]) ?? [];
+          } catch { return []; }
+        })(),
+      ]);
+
+      setWallet(walletRow);
+      setTransactions(txResult);
+
+      if (!walletRow) {
+        setWalletError("Unable to load wallet. Please refresh or contact support.");
+      }
+    } catch (e) {
+      console.error("[Wallet] fetchData error:", e);
+      setWalletError("Failed to load wallet data. Please try again.");
+    } finally {
+      setDataLoading(false);
     }
-    setWallet(walletRow);
-    setTransactions((t.data as Tx[]) ?? []);
-    setDataLoading(false);
   };
 
   useEffect(() => { if (user) fetchData(); }, [user]);
@@ -62,12 +112,15 @@ export default function WalletPage() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (!user) return;
-    const ch = supabase.channel("wallet-rt")
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "wallets", filter: `user_id=eq.${user.id}` }, () => fetchData())
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "wallet_transactions", filter: `user_id=eq.${user.id}` }, () => fetchData())
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    if (!user || !isSupabaseConfigured()) return;
+    let ch: ReturnType<typeof supabase.channel> | null = null;
+    try {
+      ch = supabase.channel("wallet-rt")
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "wallets", filter: `user_id=eq.${user.id}` }, () => fetchData())
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "wallet_transactions", filter: `user_id=eq.${user.id}` }, () => fetchData())
+        .subscribe();
+    } catch { /* realtime optional */ }
+    return () => { if (ch) supabase.removeChannel(ch).catch(() => {}); };
   }, [user]);
 
   if (loading || !user) return <div className="min-h-[60vh] flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-brand-orange" /></div>;
@@ -80,6 +133,32 @@ export default function WalletPage() {
           <p className="text-muted-foreground text-sm mt-1">Manage your balance and fund your account</p>
         </div>
 
+        {!isSupabaseConfigured() && (
+          <Card className="mb-6 border-yellow-200 bg-yellow-50">
+            <CardContent className="p-4 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-yellow-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-yellow-800">Configuration Required</p>
+                <p className="text-xs text-yellow-700 mt-0.5">Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to Replit Secrets to enable wallet features.</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {walletError && !dataLoading && (
+          <Card className="mb-6 border-red-200 bg-red-50">
+            <CardContent className="p-4 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-red-800">{walletError}</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={fetchData} className="shrink-0 text-xs">
+                <RefreshCw className="w-3 h-3 mr-1" />Retry
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         {dataLoading ? (
           <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-brand-orange" /></div>
         ) : (
@@ -90,7 +169,7 @@ export default function WalletPage() {
                 <div className="flex items-center gap-2 mb-3">
                   <Wallet className="w-5 h-5 text-brand-orange" />
                   <span className="text-white/70 text-sm">Available Balance</span>
-                  <button onClick={fetchData} className="ml-auto text-white/50 hover:text-white transition-colors"><RefreshCw className="w-4 h-4" /></button>
+                  <button onClick={fetchData} className="ml-auto text-white/50 hover:text-white transition-colors" title="Refresh balance"><RefreshCw className="w-4 h-4" /></button>
                 </div>
                 <div className="text-3xl sm:text-4xl font-bold mb-1">
                   ₦{(wallet?.balance ?? 0).toLocaleString("en-NG", { minimumFractionDigits: 2 })}
@@ -106,7 +185,7 @@ export default function WalletPage() {
               </TabsList>
 
               <TabsContent value="fund">
-                <FundWallet user={user} wallet={wallet} onFunded={fetchData} />
+                <FundWallet user={user} wallet={wallet} session={session} onFunded={fetchData} />
               </TabsContent>
 
               <TabsContent value="history">
@@ -122,7 +201,7 @@ export default function WalletPage() {
 
 const PRESETS = [1000, 2000, 5000, 10000, 20000, 50000];
 
-function FundWallet({ user, wallet, onFunded }: { user: import("@supabase/supabase-js").User; wallet: WalletRow | null; onFunded: () => void }) {
+function FundWallet({ user, wallet, session, onFunded }: { user: import("@supabase/supabase-js").User; wallet: WalletRow | null; session: import("@supabase/supabase-js").Session | null; onFunded: () => void }) {
   const [amount, setAmount] = useState("");
   const [psLoading, setPsLoading] = useState(false);
   const [nowLoading, setNowLoading] = useState(false);
@@ -131,24 +210,38 @@ function FundWallet({ user, wallet, onFunded }: { user: import("@supabase/supaba
 
   const genRef = () => `ss-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
   const amt = parseFloat(amount || "0");
+  const token = session?.access_token ?? null;
 
   const handlePaystack = async () => {
     if (amt < 100) return toast.error("Minimum amount is ₦100");
-    if (!wallet) return toast.error("Wallet not found");
+    if (!isSupabaseConfigured()) return toast.error("Supabase not configured — add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to Replit Secrets");
 
     const publicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY as string | undefined;
     if (!publicKey) return toast.error("Paystack is not configured yet — contact admin");
-    if (!window.PaystackPop) return toast.error("Paystack is still loading — please wait a moment");
+    if (!window.PaystackPop) return toast.error("Paystack is still loading — please wait a moment and try again");
 
     setPsLoading(true);
     const ref = genRef();
 
-    const { error: intentErr } = await supabase.from("payment_intents").insert({
-      user_id: user.id, provider: "paystack", reference: ref, amount: amt, currency: "NGN", status: "pending",
-    });
+    try {
+      // Ensure wallet exists before payment
+      if (!wallet) {
+        const ensured = await ensureWallet(user.id, token);
+        if (!ensured) {
+          setPsLoading(false);
+          return toast.error("Could not create wallet — please contact support");
+        }
+      }
 
-    setPsLoading(false);
-    if (intentErr) return toast.error("Failed to initialize payment");
+      const { error: intentErr } = await supabase.from("payment_intents").insert({
+        user_id: user.id, provider: "paystack", reference: ref, amount: amt, currency: "NGN", status: "pending",
+      });
+      setPsLoading(false);
+      if (intentErr) return toast.error(`Failed to initialize payment: ${intentErr.message}`);
+    } catch (e) {
+      setPsLoading(false);
+      return toast.error("Failed to initialize payment");
+    }
 
     const handler = window.PaystackPop.setup({
       key: publicKey,
@@ -179,18 +272,26 @@ function FundWallet({ user, wallet, onFunded }: { user: import("@supabase/supaba
 
   const handleNowPayments = async () => {
     if (amt < 100) return toast.error("Minimum amount is ₦100");
-    if (!wallet) return toast.error("Wallet not found");
+    if (!isSupabaseConfigured()) return toast.error("Supabase not configured — add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to Replit Secrets");
 
     setNowLoading(true);
     const ref = genRef();
 
-    const { error: intentErr } = await supabase.from("payment_intents").insert({
-      user_id: user.id, provider: "nowpayments", reference: ref, amount: amt, currency: "NGN", status: "pending",
-    });
-
-    if (intentErr) { setNowLoading(false); return toast.error("Failed to initialize payment"); }
-
     try {
+      // Ensure wallet exists before payment
+      if (!wallet) {
+        const ensured = await ensureWallet(user.id, token);
+        if (!ensured) {
+          setNowLoading(false);
+          return toast.error("Could not create wallet — please contact support");
+        }
+      }
+
+      const { error: intentErr } = await supabase.from("payment_intents").insert({
+        user_id: user.id, provider: "nowpayments", reference: ref, amount: amt, currency: "NGN", status: "pending",
+      });
+      if (intentErr) { setNowLoading(false); return toast.error(`Failed to initialize payment: ${intentErr.message}`); }
+
       const result = await createNowPaymentsInvoice({ amount: amt, userId: user.id, reference: ref });
       setNowLoading(false);
       if (result.invoiceUrl) {
