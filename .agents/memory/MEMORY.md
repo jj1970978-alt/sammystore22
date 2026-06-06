@@ -1,1 +1,2 @@
-- [Sammy Store Stack](sammy-store-stack.md) — TanStack Start SSR + Supabase + Tailwind; key patterns for server fns, auth, and payments
+- [Sammy Store Stack](sammy-store-stack.md) — Vite+React+Express dev / Cloudflare Pages Functions prod; Supabase active project bevmllrasbnmujbgbnuo
+- [Wallet System](wallet-system.md) — CF Pages Functions own /api/*; 4-step retry/fallback; background provision on login; NOWPayments IPN secret needed
