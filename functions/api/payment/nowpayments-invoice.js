@@ -23,7 +23,7 @@ export async function onRequestPost({ request, env }) {
   const intents = await intentRes.json();
   if (!intents[0]) return json({ error: "Invalid payment reference" }, 400);
 
-  const siteUrl = env.SITE_URL || "https://mmystorelogs.com";
+  const siteUrl = env.SITE_URL || "https://sammystorelogs.com";
 
   const nowRes = await fetch("https://api.nowpayments.io/v1/invoice", {
     method: "POST",

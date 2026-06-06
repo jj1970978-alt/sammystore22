@@ -26,54 +26,126 @@ async function getFreshToken(): Promise<string | null> {
   }
 }
 
-async function ensureWallet(userId: string): Promise<WalletRow | null> {
-  // Always get a fresh token — avoids race where React session state hasn't updated yet
-  const token = await getFreshToken();
+const RETRY_DELAY_MS = 2000;
+const MAX_ATTEMPTS   = 3;
 
-  // Try the server-side endpoint first (bypasses RLS for wallet creation)
-  if (token) {
+/**
+ * Ensures the user has a wallet row.
+ * Strategy (each attempt):
+ *   1. SELECT existing wallet (idempotency — never duplicate-create)
+ *   2. POST /api/wallet/ensure  (CF Pages Function, uses service role)
+ *   3. ensure_user_wallet() RPC (SECURITY DEFINER fallback)
+ *   4. Direct INSERT via anon client (wallets_self_insert policy)
+ *
+ * Returns { wallet, error } after up to MAX_ATTEMPTS tries.
+ */
+async function ensureWalletWithRetry(
+  userId: string,
+): Promise<{ wallet: WalletRow | null; error: string | null }> {
+  let lastError = "Wallet unavailable — please retry";
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    console.log(`[Wallet] ensureWallet attempt ${attempt}/${MAX_ATTEMPTS} for user ${userId}`);
+
+    // ── Step 1: idempotency — check if wallet already exists ─────────────
     try {
-      const res = await fetch("/api/wallet/ensure", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ userId }),
-      });
-      if (res.ok) {
-        const data = await res.json() as { wallet: WalletRow };
-        return data.wallet;
+      const { data: existing, error: selErr } = await supabase
+        .from("wallets")
+        .select("id,balance,currency,updated_at")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (selErr) {
+        console.warn(`[Wallet] attempt ${attempt} SELECT error:`, selErr.message, `(code ${selErr.code})`);
+        lastError = `DB error: ${selErr.message} (${selErr.code})`;
+      } else if (existing) {
+        console.log(`[Wallet] attempt ${attempt} wallet found via SELECT`);
+        return { wallet: existing as WalletRow, error: null };
       }
-      // Log the error for debugging
-      const errBody = await res.json().catch(() => ({})) as { error?: string };
-      console.warn("[Wallet] /api/wallet/ensure returned", res.status, errBody.error);
     } catch (e) {
-      console.warn("[Wallet] /api/wallet/ensure fetch error:", e);
+      console.warn(`[Wallet] attempt ${attempt} SELECT threw:`, e);
+    }
+
+    // ── Step 2: server-side CF Pages Function ────────────────────────────
+    const token = await getFreshToken();
+    if (token) {
+      try {
+        const res = await fetch("/api/wallet/ensure", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ userId }),
+          signal: AbortSignal.timeout(10_000),
+        });
+
+        if (res.ok) {
+          const data = await res.json() as { wallet: WalletRow };
+          console.log(`[Wallet] attempt ${attempt} wallet ensured via /api/wallet/ensure`);
+          return { wallet: data.wallet, error: null };
+        }
+
+        const errData = await res.json().catch(() => ({})) as { error?: string };
+        const reason  = errData.error ?? `HTTP ${res.status}`;
+        console.warn(`[Wallet] attempt ${attempt} /api/wallet/ensure failed: ${reason}`);
+        lastError = `Server error: ${reason}`;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn(`[Wallet] attempt ${attempt} /api/wallet/ensure threw: ${msg}`);
+        lastError = `Network error: ${msg}`;
+      }
+    } else {
+      console.warn(`[Wallet] attempt ${attempt} no auth token — skipping server call`);
+      lastError = "Not authenticated — please sign in again";
+    }
+
+    // ── Step 3: SECURITY DEFINER RPC ─────────────────────────────────────
+    try {
+      const { data: rpcRows, error: rpcErr } = await supabase.rpc("ensure_user_wallet" as never);
+      if (rpcErr) {
+        console.warn(`[Wallet] attempt ${attempt} ensure_user_wallet RPC error:`, rpcErr.message, `(${rpcErr.code})`);
+        lastError = `RPC error: ${rpcErr.message} (${rpcErr.code})`;
+      } else {
+        const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+        if (row) {
+          console.log(`[Wallet] attempt ${attempt} wallet ensured via RPC`);
+          return { wallet: row as WalletRow, error: null };
+        }
+      }
+    } catch (e) {
+      console.warn(`[Wallet] attempt ${attempt} RPC threw:`, e);
+    }
+
+    // ── Step 4: direct INSERT (wallets_self_insert policy) ───────────────
+    try {
+      const { data: created, error: insErr } = await supabase
+        .from("wallets")
+        .insert({ user_id: userId, balance: 0, currency: "NGN" })
+        .select("id,balance,currency,updated_at")
+        .maybeSingle();
+
+      if (insErr) {
+        console.warn(`[Wallet] attempt ${attempt} INSERT error:`, insErr.message, `(${insErr.code})`);
+        lastError = `Insert error: ${insErr.message} (${insErr.code})`;
+      } else if (created) {
+        console.log(`[Wallet] attempt ${attempt} wallet created via direct INSERT`);
+        return { wallet: created as WalletRow, error: null };
+      }
+    } catch (e) {
+      console.warn(`[Wallet] attempt ${attempt} INSERT threw:`, e);
+    }
+
+    // Pause before next attempt
+    if (attempt < MAX_ATTEMPTS) {
+      console.log(`[Wallet] retrying in ${RETRY_DELAY_MS}ms…`);
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
     }
   }
 
-  // Fallback 1: try selecting/inserting directly (works if wallets_self_insert policy is set)
-  try {
-    const { data: existing } = await supabase.from("wallets").select("id,balance,currency,updated_at").eq("user_id", userId).maybeSingle();
-    if (existing) return existing as WalletRow;
-
-    const { data: created } = await supabase.from("wallets").insert({ user_id: userId, balance: 0, currency: "NGN" }).select("id,balance,currency,updated_at").maybeSingle();
-    if (created) return created as WalletRow;
-  } catch { /* fall through */ }
-
-  // Fallback 2: SECURITY DEFINER RPC (works even without INSERT policy)
-  try {
-    const { data: rows } = await supabase.rpc("ensure_user_wallet" as never);
-    const row = Array.isArray(rows) ? rows[0] : rows;
-    if (row) return row as WalletRow;
-  } catch { /* give up */ }
-
-  return null;
+  console.error(`[Wallet] all ${MAX_ATTEMPTS} attempts failed. Last error: ${lastError}`);
+  return { wallet: null, error: lastError };
 }
 
 export default function WalletPage() {
-  const { user, loading, session } = useAuth();
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [wallet, setWallet] = useState<WalletRow | null>(null);
@@ -101,38 +173,39 @@ export default function WalletPage() {
     setDataLoading(true);
     setWalletError(null);
 
-    try {
-      const [walletRow, txResult] = await Promise.all([
-        ensureWallet(user.id),
-        (async () => {
-          if (!isSupabaseConfigured()) return [];
-          try {
-            const { data } = await supabase.from("wallet_transactions").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(50);
-            return (data as Tx[]) ?? [];
-          } catch { return []; }
-        })(),
-      ]);
+    const [{ wallet: walletRow, error: walletErr }, txResult] = await Promise.all([
+      ensureWalletWithRetry(user.id),
+      (async (): Promise<Tx[]> => {
+        if (!isSupabaseConfigured()) return [];
+        try {
+          const { data, error } = await supabase
+            .from("wallet_transactions")
+            .select("*")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .limit(50);
+          if (error) console.warn("[Wallet] tx fetch error:", error.message);
+          return (data as Tx[]) ?? [];
+        } catch { return []; }
+      })(),
+    ]);
 
-      setWallet(walletRow);
-      setTransactions(txResult);
+    setWallet(walletRow);
+    setTransactions(txResult);
 
-      if (!walletRow) {
-        setWalletError("Unable to load wallet. Please refresh or contact support.");
-      }
-    } catch (e) {
-      console.error("[Wallet] fetchData error:", e);
-      setWalletError("Failed to load wallet data. Please try again.");
-    } finally {
-      setDataLoading(false);
+    if (!walletRow) {
+      setWalletError(walletErr ?? "Unable to load wallet — please try again");
     }
+
+    setDataLoading(false);
   };
 
   useEffect(() => { if (user) fetchData(); }, [user]);
 
   useEffect(() => {
     const funded = searchParams.get("funded");
-    if (funded === "1") toast.success("Payment submitted! Your wallet will be credited shortly.");
-    else if (funded === "crypto") toast.info("Crypto payment submitted — click 'Check Status' below to confirm.");
+    if (funded === "1")      toast.success("Payment submitted! Your wallet will be credited shortly.");
+    else if (funded === "crypto") toast.info("Crypto payment received — your wallet will update automatically.");
   }, [searchParams]);
 
   useEffect(() => {
@@ -163,7 +236,7 @@ export default function WalletPage() {
               <AlertCircle className="w-5 h-5 text-yellow-600 shrink-0 mt-0.5" />
               <div>
                 <p className="text-sm font-medium text-yellow-800">Configuration Required</p>
-                <p className="text-xs text-yellow-700 mt-0.5">Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to Replit Secrets to enable wallet features.</p>
+                <p className="text-xs text-yellow-700 mt-0.5">Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable wallet features.</p>
               </div>
             </CardContent>
           </Card>
@@ -173,10 +246,12 @@ export default function WalletPage() {
           <Card className="mb-6 border-red-200 bg-red-50">
             <CardContent className="p-4 flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-red-800">{walletError}</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-red-800">Wallet could not be loaded</p>
+                <p className="text-xs text-red-600 mt-0.5 font-mono break-all">{walletError}</p>
+                <p className="text-xs text-red-500 mt-1">Open browser DevTools → Console to see full diagnostics.</p>
               </div>
-              <Button size="sm" variant="outline" onClick={fetchData} className="shrink-0 text-xs">
+              <Button size="sm" variant="outline" onClick={fetchData} className="shrink-0 text-xs border-red-300 text-red-700 hover:bg-red-100">
                 <RefreshCw className="w-3 h-3 mr-1" />Retry
               </Button>
             </CardContent>
@@ -184,7 +259,10 @@ export default function WalletPage() {
         )}
 
         {dataLoading ? (
-          <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-brand-orange" /></div>
+          <div className="flex flex-col items-center justify-center py-16 gap-3">
+            <Loader2 className="w-6 h-6 animate-spin text-brand-orange" />
+            <p className="text-xs text-muted-foreground">Setting up your wallet…</p>
+          </div>
         ) : (
           <>
             <div className="bg-gradient-to-br from-brand-navy to-brand-navy/90 text-white rounded-2xl p-6 mb-6 relative overflow-hidden">
@@ -235,27 +313,27 @@ function FundWallet({ user, wallet, onFunded }: { user: import("@supabase/supaba
   const genRef = () => `ss-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
   const amt = parseFloat(amount || "0");
 
+  const ensureWalletBeforePayment = async (): Promise<boolean> => {
+    if (wallet) return true;
+    const { wallet: w, error } = await ensureWalletWithRetry(user.id);
+    if (!w) { toast.error(`Could not create wallet: ${error}`); return false; }
+    return true;
+  };
+
   const handlePaystack = async () => {
     if (amt < 100) return toast.error("Minimum amount is ₦100");
-    if (!isSupabaseConfigured()) return toast.error("Supabase not configured — add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to Replit Secrets");
+    if (!isSupabaseConfigured()) return toast.error("Supabase not configured — add credentials to Replit Secrets");
 
     const publicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY as string | undefined;
-    if (!publicKey) return toast.error("Paystack is not configured yet — contact admin");
+    if (!publicKey) return toast.error("Paystack is not configured — contact admin");
     if (!window.PaystackPop) return toast.error("Paystack is still loading — please wait a moment and try again");
 
     setPsLoading(true);
+    const ready = await ensureWalletBeforePayment();
+    if (!ready) { setPsLoading(false); return; }
+
     const ref = genRef();
-
     try {
-      // Ensure wallet exists before payment
-      if (!wallet) {
-        const ensured = await ensureWallet(user.id);
-        if (!ensured) {
-          setPsLoading(false);
-          return toast.error("Could not create wallet — please contact support");
-        }
-      }
-
       const { error: intentErr } = await supabase.from("payment_intents").insert({
         user_id: user.id, provider: "paystack", reference: ref, amount: amt, currency: "NGN", status: "pending",
       });
@@ -263,7 +341,7 @@ function FundWallet({ user, wallet, onFunded }: { user: import("@supabase/supaba
       if (intentErr) return toast.error(`Failed to initialize payment: ${intentErr.message}`);
     } catch (e) {
       setPsLoading(false);
-      return toast.error("Failed to initialize payment");
+      return toast.error("Failed to initialize payment — check your connection");
     }
 
     const handler = window.PaystackPop.setup({
@@ -295,21 +373,14 @@ function FundWallet({ user, wallet, onFunded }: { user: import("@supabase/supaba
 
   const handleNowPayments = async () => {
     if (amt < 100) return toast.error("Minimum amount is ₦100");
-    if (!isSupabaseConfigured()) return toast.error("Supabase not configured — add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to Replit Secrets");
+    if (!isSupabaseConfigured()) return toast.error("Supabase not configured — add credentials to Replit Secrets");
 
     setNowLoading(true);
+    const ready = await ensureWalletBeforePayment();
+    if (!ready) { setNowLoading(false); return; }
+
     const ref = genRef();
-
     try {
-      // Ensure wallet exists before payment
-      if (!wallet) {
-        const ensured = await ensureWallet(user.id);
-        if (!ensured) {
-          setNowLoading(false);
-          return toast.error("Could not create wallet — please contact support");
-        }
-      }
-
       const { error: intentErr } = await supabase.from("payment_intents").insert({
         user_id: user.id, provider: "nowpayments", reference: ref, amount: amt, currency: "NGN", status: "pending",
       });
@@ -320,7 +391,7 @@ function FundWallet({ user, wallet, onFunded }: { user: import("@supabase/supaba
       if (result.invoiceUrl) {
         setCryptoPending({ reference: ref });
         window.open(result.invoiceUrl, "_blank");
-        toast.info("Complete your payment in the new tab, then click 'Check Status'.");
+        toast.info("Complete your payment in the new tab — your wallet will update automatically when confirmed.");
       }
     } catch (err: unknown) {
       setNowLoading(false);
@@ -340,7 +411,7 @@ function FundWallet({ user, wallet, onFunded }: { user: import("@supabase/supaba
         setCryptoPending(null);
         setAmount("");
       } else {
-        toast.info(`Payment status: ${result.status} — please wait for network confirmation.`);
+        toast.info(`Payment status: ${result.status} — waiting for blockchain confirmation.`);
       }
     } catch (err: unknown) {
       setCheckingStatus(false);
@@ -407,7 +478,7 @@ function FundWallet({ user, wallet, onFunded }: { user: import("@supabase/supaba
             <div className="space-y-3">
               <div className="flex items-start gap-2 text-sm text-sky-700 bg-sky-50 p-3 rounded-lg">
                 <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
-                Invoice created — complete payment in the opened tab then check status below.
+                Invoice created — your wallet will update automatically once the network confirms. You can also check manually below.
               </div>
               <Button onClick={handleCheckStatus} disabled={checkingStatus} variant="outline" className="w-full border-brand-orange text-brand-orange hover:bg-brand-orange hover:text-white">
                 {checkingStatus ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}

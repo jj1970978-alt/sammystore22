@@ -32,6 +32,37 @@ async function fetchRole(userId: string): Promise<Role | null> {
   }
 }
 
+// Fire-and-forget: ensure the user has a wallet row as soon as they sign in.
+// Runs in the background so it never blocks the auth flow.
+async function provisionWalletBackground(session: Session): Promise<void> {
+  try {
+    const res = await fetch("/api/wallet/ensure", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ userId: session.user.id }),
+      signal: AbortSignal.timeout(12_000),
+    });
+
+    if (res.ok) {
+      console.log("[Auth] Wallet provisioned in background for", session.user.email);
+      return;
+    }
+
+    const err = await res.json().catch(() => ({})) as { error?: string };
+    console.warn("[Auth] Background wallet provision returned", res.status, err.error);
+
+    // API unavailable — try SECURITY DEFINER RPC directly (always works when DB is reachable)
+    await supabase.rpc("ensure_user_wallet" as never);
+  } catch (e) {
+    // Truly offline / CF Pages Functions not yet deployed — safe to ignore.
+    // The wallet page itself has a 3-attempt retry loop.
+    console.warn("[Auth] Background wallet provision failed (non-blocking):", e);
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -49,11 +80,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, s) => {
+    } = supabase.auth.onAuthStateChange((event, s) => {
       if (!mounted) return;
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
+        // Provision wallet in background on every new login or initial session
+        if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && s) {
+          provisionWalletBackground(s);
+        }
         setTimeout(() => {
           if (!mounted) return;
           fetchRole(s.user.id).then((r) => { if (mounted) setRole(r); });
