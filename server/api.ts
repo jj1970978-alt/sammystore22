@@ -10,7 +10,12 @@ const IS_PROD = process.env.NODE_ENV === "production";
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+// Preserve raw body buffer for webhook signature verification while still parsing JSON for routes
+app.use(express.json({
+  verify: (req: any, _res, buf: Buffer) => {
+    (req as any).rawBody = buf;
+  },
+}));
 
 // ─── File upload (multer) ──────────────────────────────────────────────────
 const uploadsDir = path.resolve(__dirname, "../public/uploads");
@@ -30,7 +35,7 @@ const upload = multer({
   },
 });
 
-// ─── Config ───────────────────────────────────────────────────────────────────
+// ─── Config ──────────────────────────────────────────────────────────��[...]
 // Prefer VITE_SUPABASE_URL (the active project) over the legacy SUPABASE_URL
 const SUPABASE_URL =
   process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL ?? "";
@@ -92,7 +97,7 @@ async function seedAdmin() {
   }
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────�[...]
 function requireSupabase(res: express.Response): supabaseAdmin is SupabaseClient {
   if (!supabaseAdmin) {
     res.status(503).json({ error: "Service temporarily unavailable — Supabase not configured. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to Replit Secrets." });
@@ -115,7 +120,7 @@ function err(res: express.Response, status: number, msg: string) {
   return res.status(status).json({ error: msg });
 }
 
-// ─── Routes ───────────────────────────────────────────────────────────────
+// ─── Routes ──────────────────────────────────────────────────────────�[...]
 
 // Image upload — no auth required (admin-only UI enforces access control)
 app.post("/api/upload/image", upload.single("file"), (req, res) => {
@@ -400,24 +405,23 @@ app.post("/api/delivery/assign-credential", async (req, res) => {
 // Configure in Paystack Dashboard → Settings → API Keys & Webhooks
 // Webhook URL: https://yourdomain.com/api/payment/paystack-webhook
 app.post("/api/payment/paystack-webhook", async (req, res) => {
-  // Verify HMAC-SHA512 signature
+  // Verify HMAC-SHA512 signature using the raw request bytes
   const secret = PAYSTACK_SECRET_KEY;
   if (secret) {
-    const sig = req.headers["x-paystack-signature"] as string | undefined;
+    const sig = (req.headers["x-paystack-signature"] || "") as string;
     if (!sig) return err(res, 400, "Missing signature");
     const crypto = await import("node:crypto");
-    const expected = crypto
-      .createHmac("sha512", secret)
-      .update(JSON.stringify(req.body))
-      .digest("hex");
+    const raw = (req as any).rawBody ?? Buffer.from(JSON.stringify(req.body));
+    const expected = crypto.createHmac("sha512", secret).update(raw).digest("hex");
     if (sig !== expected) return err(res, 401, "Invalid signature");
   }
 
-  const event = req.body as {
-    event: string;
-    data?: { reference?: string; amount?: number; status?: string; metadata?: { userId?: string } };
-  };
+  // Parse event (prefer parsed body)
+  const event = req.body && typeof req.body === "object"
+    ? req.body
+    : JSON.parse(((req as any).rawBody ?? Buffer.from("{}")).toString("utf8"));
 
+  // Only handle successful charges here
   if (event.event !== "charge.success") return res.json({ received: true });
   if (!requireSupabase(res)) return;
 
@@ -438,18 +442,55 @@ app.post("/api/payment/paystack-webhook", async (req, res) => {
   if (!intent) return res.json({ received: true });
   if ((intent as Record<string, unknown>).status === "success") return res.json({ received: true });
 
-  // Credit the wallet
-  await supabaseAdmin!.rpc(
-    "credit_wallet" as never,
-    { _user_id: userId, _amount: amount, _provider: "paystack", _reference: reference, _description: "Wallet funded via Paystack" } as never
-  );
+  // Extra server-side verification with Paystack before crediting
+  if (PAYSTACK_SECRET_KEY) {
+    try {
+      const verifyResp = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
+        headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
+      });
+      if (!verifyResp.ok) {
+        console.warn("[Webhook] Paystack verify returned non-OK for", reference);
+        return res.json({ received: true });
+      }
+      const verifyJson = await verifyResp.json() as { status: boolean; data?: { status?: string; amount?: number; metadata?: any } };
+      if (!verifyJson.status || verifyJson.data?.status !== "success") {
+        console.warn("[Webhook] Paystack verify not successful for", reference, verifyJson);
+        return res.json({ received: true });
+      }
+      const verifiedAmount = (verifyJson.data?.amount ?? 0) / 100;
+      if (Math.abs(verifiedAmount - amount) > 0.01) {
+        console.warn("[Webhook] Amount mismatch for", reference, { webhookAmount: amount, verifiedAmount });
+        return res.json({ received: true });
+      }
+      if (verifyJson.data?.metadata?.userId && verifyJson.data.metadata.userId !== userId) {
+        console.warn("[Webhook] Metadata userId mismatch", { reference, userId, metaUserId: verifyJson.data.metadata.userId });
+        return res.json({ received: true });
+      }
+    } catch (e) {
+      console.error("[Webhook] Error verifying with Paystack:", e);
+      // Do not credit if we can't verify
+      return res.json({ received: true });
+    }
+  }
 
-  await supabaseAdmin!
-    .from("payment_intents")
-    .update({ status: "success", updated_at: new Date().toISOString() })
-    .eq("reference", reference);
+  // Credit the wallet (idempotent because we checked intent.status)
+  try {
+    await supabaseAdmin!.rpc(
+      "credit_wallet" as never,
+      { _user_id: userId, _amount: amount, _provider: "paystack", _reference: reference, _description: "Wallet funded via Paystack" } as never
+    );
 
-  console.log(`[Webhook] Paystack charge.success credited ₦${amount} to user ${userId}`);
+    await supabaseAdmin!
+      .from("payment_intents")
+      .update({ status: "success", updated_at: new Date().toISOString() })
+      .eq("reference", reference);
+
+    console.log(`[Webhook] Paystack charge.success credited ₦${amount} to user ${userId}`);
+  } catch (e) {
+    console.error("[Webhook] Failed to credit wallet for", reference, e);
+    // still respond 200 to Paystack to avoid retries; consider alerting or retrying via background job
+  }
+
   return res.json({ received: true });
 });
 
@@ -542,7 +583,6 @@ app.delete("/api/products/:id", async (req, res) => {
   return res.json({ success: true });
 });
 
-// ─── Category management (admin-only, uses service role to bypass RLS) ───────
 app.post("/api/categories/upsert", async (req, res) => {
   if (!requireSupabase(res)) return;
   const user = await getAuthUser(req);
@@ -607,7 +647,7 @@ if (IS_PROD) {
   console.log(`[API] Serving static files from ${distPath}`);
 }
 
-// ─── Start ─────────────────────────────────────────────────────────────────
+// ─── Start ──────────────────────────────────────────────────────────��[...]
 const PORT = parseInt(process.env.PORT ?? process.env.API_PORT ?? (IS_PROD ? "5000" : "3001"), 10);
 app.listen(PORT, "0.0.0.0", async () => {
   console.log(`[API] Server running on port ${PORT} (${IS_PROD ? "production" : "development"})`);
