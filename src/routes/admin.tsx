@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import AdminBankTransfers from "@/components/AdminBankTransfers";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ImageUploader } from "@/components/admin/ImageUploader";
 
@@ -110,6 +111,7 @@ function AdminDashboard({ adminUser }: { adminUser: import("@supabase/supabase-j
             <TabsTrigger value="audit"><ClipboardList className="w-3.5 h-3.5 mr-1" />Audit</TabsTrigger>
             <TabsTrigger value="analytics"><BarChart3 className="w-3.5 h-3.5 mr-1" />Analytics</TabsTrigger>
             <TabsTrigger value="settings"><Settings className="w-3.5 h-3.5 mr-1" />Settings</TabsTrigger>
+                <TabsTrigger value="banktransfers">Bank Transfers</TabsTrigger>
           </TabsList>
 
           <TabsContent value="users"><UsersTab /></TabsContent>
@@ -121,6 +123,7 @@ function AdminDashboard({ adminUser }: { adminUser: import("@supabase/supabase-j
           <TabsContent value="audit"><AuditTab /></TabsContent>
           <TabsContent value="analytics"><AnalyticsTab stats={stats} /></TabsContent>
           <TabsContent value="settings"><SettingsTab /></TabsContent>
+                <TabsContent value="banktransfers"><AdminBankTransfers /></TabsContent>
         </Tabs>
       </div>
     </div>
