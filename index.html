@@ -1,41 +1,236 @@
-<!doctype html>
+```html
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sammy Store Logs — Buy Verified Social Media Accounts</title>
-    <meta name="description" content="Browse verified Instagram, Facebook, Twitter and YouTube accounts. Secure transactions, instant delivery and 24/7 support." />
-    <link rel="icon" type="image/png" href="/images/logo.png" />
-  <meta property="og:image" content="https://sammystorelogs.com/images/DRJc0Of.jpeg" />
-<meta property="og:image:width" content="1200" />
-<meta property="og:image:height" content="630" />
-<meta property="og:title" content="Sammy Store Logs" />
-<meta property="og:description" content="A reliable marketplace of digital services for independent vendors." />
-<meta property="og:url" content="https://sammystorelogs.com" />
-<meta property="og:type" content="website" />
-<meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:image" content="https://sammystorelogs.com/images/DRJc0Of.jpeg" />
-<meta property="og:image" content="https://sammystorelogs.com/images/DRJc0Of.jpeg" />
-<meta property="og:image:width" content="1200" />
-<meta property="og:image:height" content="630" />
-<meta property="og:title" content="Sammy Store Logs" />
-<meta property="og:description" content="A reliable marketplace of digital services for independent vendors." />
-<meta property="og:url" content="https://sammystorelogs.com" />
-<meta property="og:type" content="website" />
-<meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:image" content="https://sammystorelogs.com/images/DRJc0Of.jpeg" />
-<meta property="og:image" content="https://sammystorelogs.com/images/DRJc0Of.jpeg" />
-<meta property="og:image:width" content="1200" />
-<meta property="og:image:height" content="630" />
-<meta property="og:title" content="Sammy Store Logs" />
-<meta property="og:description" content="A reliable marketplace of digital services for independent vendors." />
-<meta property="og:url" content="https://sammystorelogs.com" />
-<meta property="og:type" content="website" />
-<meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:image" content="https://sammystorelogs.com/images/DRJc0Of.jpeg" />
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SammyStore - Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://cdn.jsdelivr.net/npm/fontsource-inter@5.0.0/index.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/fontsource-poppins@5.0.0/index.min.css" rel="stylesheet">
+<style>
+  * { font-family: 'Inter', sans-serif; }
+  .font-poppins { font-family: 'Poppins', sans-serif; }
+  body {
+    background: #0a0a0f;
+    color: #e5e7eb;
+  }
+  .sidebar-overlay { transition: opacity 0.3s ease; }
+  .sidebar { transition: transform 0.3s ease; }
+  .nav-item { transition: all 0.2s ease; }
+  .nav-item:hover { background-color: rgba(99, 102, 241, 0.1); }
+  .nav-item.active { 
+    background: linear-gradient(90deg, rgba(99, 102, 241, 0.2) 0%, transparent 100%);
+    border-right: 3px solid #6366f1;
+  }
+  .card-hover { transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; }
+  .card-hover:hover { 
+    transform: translateY(-4px); 
+    box-shadow: 0 12px 32px rgba(99, 102, 241, 0.15);
+    border-color: rgba(99, 102, 241, 0.4);
+  }
+  .fade-in { animation: fadeIn 0.4s ease forwards; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  .stat-card { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); }
+  .stat-card-2 { background: linear-gradient(135deg, #ec4899 0%, #f43f5e 100%); }
+  .stat-card-3 { background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%); }
+  .stat-card-4 { background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%); }
+  .product-badge { position: absolute; top: 12px; right: 12px; }
+  .whatsapp-btn { background: linear-gradient(135deg, #25D366, #128C7E); }
+  .section-title { font-family: 'Poppins', sans-serif; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #13151c; }
+  ::-webkit-scrollbar-thumb { background: #2a2d3a; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a3d4a; }
+  .tab-btn.active { border-bottom: 3px solid #6366f1; color: #a5b4fc; font-weight: 600; }
+  .modal-overlay { transition: opacity 0.3s ease; }
+  .modal-content { transition: transform 0.3s ease; }
+  .glass-card {
+    background: rgba(26, 29, 39, 0.6);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .glow-indigo { box-shadow: 0 0 40px rgba(99, 102, 241, 0.15); }
+  .gradient-border {
+    position: relative;
+  }
+  .gradient-border::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.5), rgba(139, 92, 246, 0.5));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+  input, select {
+    background: #13151c;
+    color: #e5e7eb;
+    border-color: #2a2d3a;
+  }
+  input::placeholder { color: #6b7280; }
+  input:focus { border-color: #6366f1; }
+  .bg-dark-card { background: #13151c; }
+  .bg-dark-card-2 { background: #1a1d27; }
+  .border-dark { border-color: #252836; }
+  .text-muted { color: #9ca3af; }
+  .text-dim { color: #6b7280; }
+  .hover-dark:hover { background: #1a1d27; }
+</style>
 </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
+<body class="min-h-screen">
+
+<!-- Mobile Header -->
+<div class="lg:hidden fixed top-0 left-0 right-0 bg-[#13151c]/95 backdrop-blur-xl border-b border-[#252836] z-40 px-4 py-3 flex items-center justify-between">
+  <button onclick="toggleSidebar()" class="p-2 rounded-lg hover:bg-[#1a1d27]">
+    <svg class="w-6 h-6 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+  </button>
+  <div class="flex items-center gap-2">
+    <div class="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/30">
+      <span class="text-white font-bold text-sm">SS</span>
+    </div>
+    <span class="font-poppins font-bold text-lg text-white">SammyStore</span>
+  </div>
+  <div class="flex items-center gap-2">
+    <div class="bg-indigo-500/20 border border-indigo-500/30 px-3 py-1 rounded-full">
+      <span class="text-indigo-300 font-semibold text-sm">₦ 10,591</span>
+    </div>
+    <div class="w-8 h-8 bg-[#1a1d27] rounded-full flex items-center justify-center border border-[#252836]">
+      <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+    </div>
+  </div>
+</div>
+
+<!-- Sidebar Overlay (Mobile) -->
+<div id="sidebarOverlay" class="sidebar-overlay fixed inset-0 bg-black/70 z-40 hidden lg:hidden" onclick="toggleSidebar()"></div>
+
+<!-- Sidebar -->
+<aside id="sidebar" class="sidebar fixed top-0 left-0 h-full w-72 bg-[#0f1117] border-r border-[#1e2030] z-50 transform -translate-x-full lg:translate-x-0 lg:static lg:z-auto flex flex-col overflow-y-auto">
+  <!-- Logo -->
+  <div class="px-5 py-4 border-b border-[#1e2030] flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
+        <span class="text-white font-bold text-lg">SS</span>
+      </div>
+      <span class="font-poppins font-bold text-xl text-white">SammyStore</span>
+    </div>
+    <button onclick="toggleSidebar()" class="lg:hidden p-1 rounded hover:bg-[#1a1d27]">
+      <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+    </button>
+  </div>
+
+  <!-- Nav Items -->
+  <nav class="flex-1 py-3 px-3">
+    <!-- Dashboard -->
+    <button onclick="showSection('dashboard')" class="nav-item active w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-200 text-sm font-medium" data-section="dashboard">
+      <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+      Dashboard
+    </button>
+
+    <!-- SERVICES -->
+    <div class="mt-4 mb-2 px-4">
+      <span class="section-title text-xs font-bold text-gray-500 uppercase tracking-wider">Services</span>
+    </div>
+    
+    <button onclick="showSection('accounts')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="accounts">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+      Buy Account (Logs)
+    </button>
+    <button onclick="showSection('numbers')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="numbers">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+      Buy USA Numbers
+    </button>
+    <button onclick="showSection('allnumbers')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="allnumbers">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      Buy All Countries Numbers
+    </button>
+    <button onclick="showSection('pricing')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="pricing">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      USA Services & Pricing
+    </button>
+    <button onclick="showSection('fund')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="fund">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
+      Fund Wallet
+    </button>
+    <button onclick="showSection('refer')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="refer">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      Refer & Earn
+    </button>
+
+    <!-- HISTORY -->
+    <div class="mt-4 mb-2 px-4">
+      <span class="section-title text-xs font-bold text-gray-500 uppercase tracking-wider">History</span>
+    </div>
+    <button onclick="showSection('accounthistory')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="accounthistory">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+      Account Logs History
+    </button>
+    <button onclick="showSection('numbershistory')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="numbershistory">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+      Numbers History
+    </button>
+    <button onclick="showSection('txhistory')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="txhistory">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      Transaction History
+    </button>
+
+    <!-- DEVELOPER TOOL -->
+    <div class="mt-4 mb-2 px-4">
+      <span class="section-title text-xs font-bold text-gray-500 uppercase tracking-wider">Developer Tool</span>
+    </div>
+    <button onclick="showSection('api')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="api">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+      Api Tools
+      
+    <button onclick="showSection('accounts')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="accounts">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+      Buy Account (Logs)
+    </button>
+    <button onclick="showSection('numbers')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="numbers">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+      Buy USA Numbers
+    </button>
+    <button onclick="showSection('allnumbers')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="allnumbers">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      Buy All Countries Numbers
+    </button>
+    <button onclick="showSection('pricing')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="pricing">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      USA Services & Pricing
+    </button>
+    <button onclick="showSection('fund')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="fund">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
+      Fund Wallet
+    </button>
+    <button onclick="showSection('refer')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="refer">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      Refer & Earn
+    </button>
+
+    <!-- HISTORY -->
+    <div class="mt-4 mb-2 px-4">
+      <span class="section-title text-xs font-bold text-gray-500 uppercase tracking-wider">History</span>
+    </div>
+    <button onclick="showSection('accounthistory')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="accounthistory">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+      Account Logs History
+    </button>
+    <button onclick="showSection('numbershistory')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="numbershistory">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+      Numbers History
+    </button>
+    <button onclick="showSection('txhistory')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="txhistory">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      Transaction History
+    </button>
+
+    <!-- DEVELOPER TOOL -->
+    <div class="mt-4 mb-2 px-4">
+      <span class="section-title text-xs font-bold text-gray-500 uppercase tracking-wider">Developer Tool</span>
+    </div>
+    <button onclick="showSection('api')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 text-sm font-medium" data-section="api">
+      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+      Api Tools
